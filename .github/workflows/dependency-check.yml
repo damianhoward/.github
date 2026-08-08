@@ -15,7 +15,13 @@ on:
       report-paths:
         description: Report path(s) uploaded as the run artifact.
         type: string
-        default: build/reports/dependency-check-report.html
+        # A pattern rather than a path because the two plugin versions in the estate disagree
+        # about the directory: dependency-check-gradle 12.2.2 writes build/reports, and 13.0.0
+        # writes build/reports/dependency-check. `**` matches zero directories as well as
+        # several, so one default covers both while the platform bump propagates. The upload
+        # step ignores a missing file, so a path that stops matching uploads nothing and says
+        # nothing — build-conventions ran green for a scan whose report was never published.
+        default: build/reports/**/dependency-check-report.html
     secrets:
       NVD_API_KEY:
         required: false
