@@ -5,7 +5,7 @@ name: Auto-merge
 # lint.yml it is one of the two workflows here that actually run against this repository.
 #
 # Replaces dependabot-automerge.yml. Two changes: it covers this repository's own pull
-# requests rather than only Dependabot's, and it merges with AUTOMERGE_TOKEN instead of
+# requests rather than only Dependabot's, and it merges with the organisation's app rather than
 # GITHUB_TOKEN. GitHub raises no workflow runs for events triggered by GITHUB_TOKEN, so the
 # previous workflow's merges landed on main without the lint gate ever running against it.
 #
@@ -16,7 +16,8 @@ on:
   pull_request_target:
     branches: [main]
 
-# The merge itself is performed with AUTOMERGE_TOKEN, so GITHUB_TOKEN needs nothing.
+# The merge is performed with a token minted from the organisation's app, so GITHUB_TOKEN needs
+# nothing.
 permissions: {}
 
 jobs:

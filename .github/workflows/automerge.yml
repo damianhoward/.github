@@ -20,8 +20,11 @@ name: Auto-merge
 on:
   workflow_call:
     secrets:
-      AUTOMERGE_TOKEN:
-        description: Fine-grained PAT with contents and pull-requests write.
+      APP_ID:
+        description: The organisation's auto-merge GitHub App.
+        required: true
+      APP_PRIVATE_KEY:
+        description: Its private key, exchanged below for a token that expires within the hour.
         required: true
 
 jobs:
@@ -35,10 +38,24 @@ jobs:
       (github.event.pull_request.user.login == 'damian1000' ||
        github.event.pull_request.user.login == 'dependabot[bot]')
     steps:
+      # A token minted here lives about an hour, so there is no long-lived credential in any
+      # repository and nothing to rotate on a calendar. The personal access token this replaces
+      # expired overnight on 2026-08-12; auto-merge fails as a workflow run rather than as a pull
+      # request, so the only visible symptom was Dependabot pull requests quietly sitting open.
+      #
+      # It cannot be GITHUB_TOKEN. Merges made with that token do not trigger further workflow
+      # runs, so deploy-on-merge would stop without anything reporting an error.
+      - name: Mint a token for this run
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Enable auto-merge
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
         # `--auto` asks GitHub to merge when the required checks pass.
         #
         # It does NOT fail when a repository has no required status checks — this comment used to
