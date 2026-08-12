@@ -70,4 +70,11 @@ jobs:
         # the caller to a repository, confirm main is protected with a required check — and if
         # it cannot be, do not add the caller, because there is nothing here to make merging
         # safe on its own.
+        #
+        # This repository is the one that deliberately has no caller. A change here reaches every
+        # other repository at @main with secrets: inherit, and a green lint is not a review of a
+        # file with that reach. Authorship does not narrow it either: a Dependabot action-SHA bump
+        # edits these shared workflows exactly as an owner change does. The manual merge click is
+        # the gate, because a required review cannot be one where the only maintainer would have
+        # to approve their own pull request.
         run: gh pr merge --auto --squash "$PR_URL"

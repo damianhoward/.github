@@ -1,6 +1,6 @@
 # .github
 
-Shared CI and delivery for the `damian1000` repositories. The `ci`, `codeql`, `dep-review`,
+Shared CI and delivery for the `damianhoward` repositories. The `ci`, `codeql`, `dep-review`,
 `dependency-check`, `dependency-submission`, `automerge`, `deploy`, and `release` pipelines are
 defined once here as reusable workflows; each repository calls them so the pipeline is identical
 everywhere and changes land in one place.
@@ -19,15 +19,23 @@ current, arriving as reviewable pull requests.
 | `.github/workflows/dep-review.yml`            | Dependency review; fails a PR on a high-severity advisory.                                                                                                             |
 | `.github/workflows/dependency-check.yml`      | Weekly OWASP dependency-check; fails on CVSS >= 7.0. Needs an `NVD_API_KEY` secret.                                                                                    |
 | `.github/workflows/dependency-submission.yml` | Submits the resolved Gradle dependency graph. `dep-review.yml` and Dependabot alerts see no JVM dependency without it.                                                 |
-| `.github/workflows/automerge.yml`             | Enables auto-merge so GitHub squash-merges once the required checks pass. Needs an `AUTOMERGE_TOKEN` secret.                                                           |
+| `.github/workflows/automerge.yml`             | Enables auto-merge so GitHub squash-merges once the required checks pass. Needs the `APP_ID` and `APP_PRIVATE_KEY` secrets.                                            |
 | `.github/workflows/deploy.yml`                | Production deploy: re-runs the gate, ships the tested artifact, switches release atomically, gates on readiness, rolls back on the host. Needs the `DEPLOY_*` secrets. |
 | `.github/workflows/release.yml`               | Verifies a tagged commit, then publishes its release. Notes-only unless artifacts are named.                                                                           |
 
 ## This repository's own gate
 
-`lint.yml` and `auto-merge.yml` are the two workflows here that are not reusable — everything
-else in the table is `on: workflow_call`. `auto-merge.yml` is an ordinary caller of
-`automerge.yml` beside it, so this repository is not a special case.
+`lint.yml` is the only workflow here that is not reusable — everything else in the table is
+`on: workflow_call`.
+
+This repository carries no auto-merge caller, and that is the one place the estate's uniformity
+is deliberately broken. Every other repository's changes reach that repository; these reach all of
+them, at `@main`, with `secrets: inherit`. A green lint is not a review of a file that runs
+everywhere with every repository's credentials — and the exposure is the same whoever opened the
+pull request, because a Dependabot action-SHA bump edits the shared workflows exactly as an owner
+change does. So the merge button stays manual here. It is the only gate available: GitHub will not
+accept a self-approval, so requiring a review on a single-maintainer repository blocks every merge
+rather than gating it.
 
 `.github/workflows/lint.yml` exists because none of the reusable files run against this
 repository's own pull requests, which left the repository every caller references at `@main`
@@ -68,8 +76,11 @@ that auto-merged on 2026-07-14 under the previous `GITHUB_TOKEN` workflow:
 | kotlin-blockchain    | `d8a9fc43`   | none       | none          |
 | sudoku-dancing-links | `153e95ee`   | none       | none          |
 
-`automerge.yml` merges with `AUTOMERGE_TOKEN`, a fine-grained personal access token, so the
-merge is attributed to a person and the push behaves like any other.
+`automerge.yml` merges with a token minted per run from the organisation's app — `APP_ID` and
+`APP_PRIVATE_KEY`, held once at organisation level — so the push behaves like any other and no
+long-lived credential sits in a repository. It cannot be `GITHUB_TOKEN` for the reason above. The
+fine-grained personal access token this replaced expired overnight on 2026-08-12 and blocked
+nothing visibly, because auto-merge fails as a workflow run that no required check depends on.
 
 It also runs on `pull_request_target` rather than `pull_request`. A `pull_request` run raised
 by Dependabot is given Dependabot's secret scope instead of the repository's Actions secrets,
@@ -141,7 +152,7 @@ on:
     branches: [main]
 jobs:
   build:
-    uses: damian1000/.github/.github/workflows/ci.yml@main
+    uses: damianhoward/.github/.github/workflows/ci.yml@main
     secrets: inherit
     with:
       coverage-report-files: build/reports/jacoco/test/jacocoTestReport.xml
@@ -174,7 +185,7 @@ on:
   workflow_dispatch:
 jobs:
   scan:
-    uses: damian1000/.github/.github/workflows/dependency-check.yml@main
+    uses: damianhoward/.github/.github/workflows/dependency-check.yml@main
     secrets: inherit
 ```
 
@@ -190,7 +201,7 @@ on:
     branches: [main]
 jobs:
   submit:
-    uses: damian1000/.github/.github/workflows/dependency-submission.yml@main
+    uses: damianhoward/.github/.github/workflows/dependency-submission.yml@main
 ```
 
 `deploy.yml` callers pass only what genuinely differs between services, and serialise on a shared
@@ -210,7 +221,7 @@ concurrency:
 
 jobs:
   deploy:
-    uses: damian1000/.github/.github/workflows/deploy.yml@main
+    uses: damianhoward/.github/.github/workflows/deploy.yml@main
     with:
       app: risk-engine
       dist-module: app
@@ -239,7 +250,7 @@ permissions:
 
 jobs:
   release:
-    uses: damian1000/.github/.github/workflows/release.yml@main
+    uses: damianhoward/.github/.github/workflows/release.yml@main
     with:
       build-command: clean build
 ```
@@ -253,6 +264,6 @@ on:
     branches: [main]
 jobs:
   auto-merge:
-    uses: damian1000/.github/.github/workflows/automerge.yml@main
+    uses: damianhoward/.github/.github/workflows/automerge.yml@main
     secrets: inherit
 ```
