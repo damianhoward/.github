@@ -17,6 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the attribution scan below reads the whole history
+
+      # This repository has no Gradle build, so it never runs the shared CI workflow and never
+      # reached the scan that workflow performs. That is why its own `main` went green while
+      # carrying an attribution trailer. Every repository outside the shared CI workflow now
+      # calls the same action from its own lint job.
+      - name: Check for AI attribution in history
+        uses: ./.github/actions/attribution-scan
 
       # actionlint ships release binaries rather than an action, and its own install script
       # lives on a mutable branch URL. Downloading a fixed version and verifying its published

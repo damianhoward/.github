@@ -1,0 +1,38 @@
+name: Attribution scan
+description: Fails when git history carries AI attribution in a commit message or in a commit's author or committer identity.
+
+# Two scans, deliberately kept separate over different `git log` formats.
+#
+# The message scan is anchored (`^co-authored-by:`) because prose legitimately mentions
+# CLAUDE.md, and an unanchored word match would fail every repository that documents its own
+# standards. The identity scan cannot be anchored the same way, so it runs over author and
+# committer fields only, where the word can only be a name or an address.
+#
+# Splitting them is what makes both usable. A single pattern loose enough to catch an author
+# named `Claude` would fire on any commit body mentioning the file, and a single pattern tight
+# enough not to would miss the authorship — which is the case that reached `main`: a squash
+# merge with `squash_merge_commit_message=COMMIT_MESSAGES` turns a branch commit's *author*
+# into a `Co-authored-by` trailer on the squash commit, so history that scans clean by message
+# before the merge is poisoned after it.
+#
+# Requires `actions/checkout` with `fetch-depth: 0`; against a depth-1 checkout both scans pass
+# by reading almost nothing.
+
+runs:
+  using: composite
+  steps:
+    - name: Check for AI attribution in commit messages
+      shell: bash
+      run: |
+        if git log --all --format="%B" | grep -iE "^co-authored-by:[[:space:]]*claude|noreply@anthropic|generated (with|by)[[:space:]]*claude|🤖"; then
+          echo "::error::AI attribution found in a commit message — see CLAUDE.md commit standards."
+          exit 1
+        fi
+
+    - name: Check for AI attribution in commit authorship
+      shell: bash
+      run: |
+        if git log --all --format="%an <%ae>%n%cn <%ce>" | grep -iE "(^|[[:space:]<])claude([[:space:]<]|$)|anthropic"; then
+          echo "::error::AI attribution found in a commit author or committer — set user.name and user.email before committing."
+          exit 1
+        fi
