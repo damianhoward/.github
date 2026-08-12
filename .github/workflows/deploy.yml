@@ -21,6 +21,13 @@ name: Deploy
 # Release, health check and rollback are one remote script so the decision to roll back is made on
 # the box: a runner that dies between "restart" and "check" cannot leave a broken release serving
 # with nothing left to react to it.
+#
+# That script is no longer sent from here. It lives on the box as /usr/local/bin/deploy-service,
+# owned by root and versioned with the box's other privileged configuration, and this workflow asks
+# for a release in five words with the bundle on stdin. The difference is what a stolen
+# DEPLOY_SSH_KEY is worth: piping a script into `ssh ... bash -s` needs a key that can run anything
+# as a user with passwordless sudo, and on box 2 the key can now only run that one script, under an
+# account whose only root right is restarting one named service.
 on:
   workflow_call:
     inputs:
@@ -104,7 +111,13 @@ jobs:
             ./gradlew --no-daemon clean build installDist
             install_root="build/install"
           fi
-          tar -czf "$APP-dist.tar.gz" -C "$install_root" "$APP"
+          # One bundle carrying the distribution and the repository's deploy directory, because the
+          # restricted key has no scp: everything the box needs arrives on the deploy's stdin or
+          # not at all. Fixed names inside it, so the box never has to guess what it received.
+          mkdir -p bundle
+          cp -r "$install_root/$APP" bundle/dist
+          if [ -d deploy ]; then cp -r deploy bundle/deploy; fi
+          tar -czf "$APP-dist.tar.gz" -C bundle .
 
       - name: Upload distribution
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -123,7 +136,8 @@ jobs:
       url: ${{ inputs.url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        # for the deploy/ directory: the service unit, the pinned host key, and any post-release.sh
+        # for deploy/known_hosts.pub, which is needed before the connection rather than on the far
+        # side of it. Everything else the box needs travels inside the bundle.
 
       - name: Download distribution
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -147,19 +161,6 @@ jobs:
           printf 'Host *\n  StrictHostKeyChecking yes\n  IdentitiesOnly yes\n' > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
-      - name: Ship artifact and deploy directory
-        env:
-          APP: ${{ inputs.app }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          set -euo pipefail
-          target="$DEPLOY_USER@$DEPLOY_HOST"
-          # Clear first: scp -r into an existing directory would nest a second copy inside it.
-          ssh -i ~/.ssh/deploy_key "$target" "rm -rf /tmp/$APP-deploy"
-          scp -i ~/.ssh/deploy_key "$APP-dist.tar.gz" "$target:/tmp/$APP-dist.tar.gz"
-          scp -r -i ~/.ssh/deploy_key deploy "$target:/tmp/$APP-deploy"
-
       - name: Release, verify, and roll back on failure
         env:
           APP: ${{ inputs.app }}
@@ -169,110 +170,11 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
+          set -euo pipefail
+          # The whole deploy is one request: five words the box validates, and the bundle on stdin.
+          # Where the key is restricted the words arrive as SSH_ORIGINAL_COMMAND and the verb is
+          # ignored; where it is not, they are argv. The exit code is the box's verdict on the
+          # release, including whether a rollback was needed and whether it came back up.
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            bash -seuo pipefail "$APP" "$GITHUB_SHA" "$HEALTH_PORT" "$HOLD_SECONDS" "$STARTUP_SECONDS" <<'REMOTE'
-          app="$1"
-          release="${2:-manual-$(date +%Y%m%d%H%M%S)}"
-          port="$3"
-          hold_seconds="$4"
-          startup_seconds="$5"
-
-          link="$HOME/$app"
-          releases="$HOME/releases/$app"
-          target="$releases/$release"
-          deploy_dir="/tmp/$app-deploy"
-          trap 'rm -rf "$deploy_dir"' EXIT
-
-          mkdir -p "$releases"
-          rm -rf "$target"
-          mkdir -p "$target"
-          tar -xzf "/tmp/$app-dist.tar.gz" -C "$target" --strip-components=1
-          rm -f "/tmp/$app-dist.tar.gz"
-
-          # Keep the host's unit in lockstep with the version-controlled one.
-          if ! cmp -s "$deploy_dir/$app.service" "/etc/systemd/system/$app.service"; then
-            sudo cp "$deploy_dir/$app.service" "/etc/systemd/system/$app.service"
-            sudo systemctl daemon-reload
-          fi
-          # Unconditional and idempotent: a rebuilt box has to come back up on its own, and
-          # enabling only when the unit file changed leaves that to whoever remembers.
-          sudo systemctl enable -q "$app"
-
-          # Remote work specific to one repository — extra units, timers, scripts. Invoked
-          # through bash so the file's exec bit is not load-bearing across scp and git.
-          if [ -f "$deploy_dir/post-release.sh" ]; then
-            echo "running deploy/post-release.sh"
-            DEPLOY_DIR="$deploy_dir" APP="$app" bash "$deploy_dir/post-release.sh"
-          fi
-
-          # First release under this scheme: the install path is still a real directory, so it
-          # becomes the rollback target rather than being deleted.
-          if [ -d "$link" ] && [ ! -L "$link" ]; then
-            previous="$releases/legacy"
-            rm -rf "$previous"
-            mv "$link" "$previous"
-          else
-            previous="$(readlink -f "$link" 2>/dev/null || true)"
-          fi
-
-          # Swapping a symlink through rename() is atomic: the service never sees a half-copied
-          # install, which the old "delete bin and lib, then copy" release could expose.
-          switch_to() {
-            ln -sfn "$1" "$link.staging"
-            mv -Tf "$link.staging" "$link"
-          }
-
-          healthy() {
-            [ "$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:$port/readyz" || true)" = "200" ]
-          }
-
-          # Budget in seconds rather than a bare attempt count, so the number in the workflow
-          # inputs means what it says and does not have to be divided by the sleep to be read.
-          await_health() {
-            for attempt in $(seq 1 $(( startup_seconds / 2 )) ); do
-              if healthy; then
-                echo "$1 healthy after ${attempt} attempt(s)"
-                return 0
-              fi
-              sleep 2
-            done
-            return 1
-          }
-
-          # Readiness has to appear and then hold. Services here go ready before their first real
-          # self-check completes — trading-system's /readyz is 503 while its two views disagree,
-          # and the desk's reports upstreams it has not reached yet — so a single sample can pass
-          # on a release that is about to fail.
-          holds() {
-            echo "re-checking readiness in ${hold_seconds}s"
-            sleep "$hold_seconds"
-            if healthy; then
-              echo "readiness held for ${hold_seconds}s"
-              return 0
-            fi
-            echo "readiness did not hold"
-            return 1
-          }
-
-          switch_to "$target"
-          sudo systemctl restart "$app"
-
-          if await_health "release $release" && holds; then
-            # Three releases is enough to roll back through without filling the disk.
-            find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
-              | sort -rn | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
-            rm -rf "$HOME/$app-prev"
-            exit 0
-          fi
-
-          echo "release $release did not reach and hold readiness"
-          if [ -n "$previous" ] && [ -d "$previous" ]; then
-            echo "rolling back to $previous"
-            switch_to "$previous"
-            sudo systemctl restart "$app"
-            await_health "rollback" || echo "rollback did not come up either — the service is down"
-          else
-            echo "no previous release to roll back to"
-          fi
-          exit 1
-          REMOTE
+            "deploy-service $APP $GITHUB_SHA $HEALTH_PORT $HOLD_SECONDS $STARTUP_SECONDS" \
+            < "$APP-dist.tar.gz"
