@@ -1,11 +1,3 @@
-# Damian Howard
-
-**Senior / Staff Software Engineer** in London with 20+ years of experience building trading, pricing, risk and post-trade systems for investment banks and financial technology firms.
-
-Currently working at **Citi via JUXT / Grid Dynamics**, focused on distributed cross-asset risk orchestration and intraday/EOD risk processing.
-
-[Live Trading Platform](https://desk.damianhoward.com) · [LinkedIn](https://linkedin.com/in/damianhoward)
-
 ## Front-Office Trading Platform
 
 An end-to-end trading platform covering live market data, price-time-priority matching, Kafka execution flows, position booking and live risk.
