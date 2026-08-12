@@ -16,7 +16,7 @@ The components are separately deployed and versioned. `trading-system` and `trad
 
 ## Selected Experience
 
-- **Citi via JUXT / Grid Dynamics**: cross-asset risk orchestration and intraday/EOD risk processing
+- **Citibank**: cross-asset risk orchestration and intraday/EOD risk processing
 - **Morgan Stanley**: front-office pricing and risk for CDS Index Options and Structured Credit
 - **CMC Markets**: low-latency options pricing and FIX connectivity using Chronicle Map off-heap storage
 - **Blockchain.com**: institutional prime brokerage and treasury automation across major cryptocurrency venues
