@@ -18,9 +18,9 @@ on:
         # A pattern rather than a path because the two plugin versions in the estate disagree
         # about the directory: dependency-check-gradle 12.2.2 writes build/reports, and 13.0.0
         # writes build/reports/dependency-check. `**` matches zero directories as well as
-        # several, so one default covers both while the platform bump propagates. The upload
-        # step ignores a missing file, so a path that stops matching uploads nothing and says
-        # nothing — build-conventions ran green for a scan whose report was never published.
+        # several, so one default covers both while the platform bump propagates. A pattern that
+        # stops matching now fails the run rather than uploading nothing quietly — that silence
+        # is how build-conventions ran green for a scan whose report was never published.
         default: build/reports/**/dependency-check-report.html
     secrets:
       NVD_API_KEY:
@@ -70,6 +70,17 @@ jobs:
           restore-keys: |
             nvd-${{ runner.os }}-
 
+      # The previous scan's findings, so this one can report what changed rather than restate a
+      # list nobody reads twice. Same unique-key-plus-prefix-restore shape as the NVD cache: each
+      # run writes its own entry and starts from the newest earlier one.
+      - name: Restore the previous scan's findings
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scan-findings.json
+          key: depcheck-findings-${{ github.workflow }}-${{ github.run_id }}
+          restore-keys: |
+            depcheck-findings-${{ github.workflow }}-
+
       - name: Scan dependencies
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -93,10 +104,103 @@ jobs:
           path: ~/.gradle/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
 
+      # The step that makes a scan readable. Everything above this line reported success while
+      # publishing nothing at all for weeks: the plugin moved its output directory, the upload
+      # ignored the miss, and nobody opens a run artifact anyway. A failing scan is already loud,
+      # so this does not restate findings — it says what appeared and what went away since the
+      # last run, in the job summary, where it is visible without downloading anything.
+      #
+      # Runs on failure too. Failing the CVSS gate is exactly when the delta is worth reading, and
+      # that is the run where the Gradle step has already exited non-zero.
+      - name: Summarise the findings
+        if: always()
+        env:
+          # One file, read then rewritten: restored it holds the last run's findings, saved it
+          # holds this run's, which is what the next run compares against.
+          FINDINGS: scan-findings.json
+        run: |
+          python3 - <<'PY'
+          import glob, json, os, pathlib
+
+          reports = sorted(glob.glob("**/dependency-check-report.json", recursive=True))
+          summary = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+
+          # Assert rather than shrug. A missing report is the failure this whole step exists for:
+          # it is indistinguishable from a clean scan in every other signal the run produces.
+          if not reports:
+              summary.write_text(
+                  "## Dependency scan\n\n"
+                  "**No JSON report was produced.** The scan cannot be read, so its result is "
+                  "unknown rather than clean.\n"
+              )
+              raise SystemExit("no dependency-check JSON report found; the scan published nothing")
+
+          findings, scanned = {}, 0
+          for report in reports:
+              data = json.loads(pathlib.Path(report).read_text())
+              for dependency in data.get("dependencies", []):
+                  scanned += 1
+                  name = dependency.get("fileName", "unknown")
+                  for vulnerability in dependency.get("vulnerabilities", []):
+                      findings[f"{vulnerability.get('name', '?')} {name}"] = {
+                          "cve": vulnerability.get("name", "?"),
+                          "dependency": name,
+                          "severity": (vulnerability.get("severity") or "UNKNOWN").upper(),
+                      }
+
+          findings_path = pathlib.Path(os.environ["FINDINGS"])
+          previous = json.loads(findings_path.read_text()) if findings_path.exists() else None
+          findings_path.write_text(json.dumps(sorted(findings)))
+
+          appeared = sorted(set(findings) - set(previous)) if previous is not None else []
+          resolved = sorted(set(previous) - set(findings)) if previous is not None else []
+
+          rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
+          lines = ["## Dependency scan", ""]
+
+          if previous is None:
+              lines += ["No earlier scan cached, so there is no delta to report yet.", ""]
+          elif not appeared and not resolved:
+              lines += ["No change since the last scan.", ""]
+          else:
+              lines += [f"**{len(appeared)} new**, {len(resolved)} resolved since the last scan.", ""]
+
+          if findings:
+              lines += ["| | CVE | Severity | Dependency |", "| --- | --- | --- | --- |"]
+              for key in sorted(findings, key=lambda k: (rank.get(findings[k]["severity"], 4), k)):
+                  finding = findings[key]
+                  mark = "new" if key in appeared else ""
+                  lines.append(
+                      f"| {mark} | {finding['cve']} | {finding['severity']} | {finding['dependency']} |"
+                  )
+              lines.append("")
+          else:
+              lines += [f"No vulnerable dependencies across {scanned} scanned.", ""]
+
+          if resolved:
+              lines += ["Resolved since the last scan:", ""]
+              lines += [f"- {key}" for key in resolved]
+              lines.append("")
+
+          lines.append(f"Reports read: {', '.join(reports)}")
+          summary.write_text("\n".join(lines) + "\n")
+          PY
+
+      # Saved whatever the gate did, so the next run's delta is measured against what this run
+      # actually found rather than against the last run that happened to pass.
+      - name: Save this scan's findings
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scan-findings.json
+          key: depcheck-findings-${{ github.workflow }}-${{ github.run_id }}
+
       - name: Publish the report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dependency-check-report
           path: ${{ inputs.report-paths }}
-          if-no-files-found: ignore
+          # `error`, not `ignore`. The pattern above is what broke silently before, and an upload
+          # that shrugs at a miss is how a broken report path survived for weeks behind green runs.
+          if-no-files-found: error
