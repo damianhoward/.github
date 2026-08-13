@@ -58,8 +58,14 @@ runs:
         #
         # The trailing "Run with --stacktrace" continuation is Gradle telling you how to find the
         # caller, not a distinct warning.
-        grep -hE 'has been deprecated|scheduled to be removed|warning: \[(deprecation|removal)\]|^w: .*is deprecated|^WARNING: (A (terminally deprecated|restricted) method|.*(will be (removed|blocked) in a future release|has been called by|--enable-native-access))' "$log" \
-          | grep -v -- '--stacktrace' \
+        # `|| true` on both greps, and it is load-bearing rather than defensive. GitHub runs a
+        # composite step under `bash -e -o pipefail`, so a grep that matches nothing exits 1, the
+        # pipeline inherits it, and the step dies before printing anything — meaning the gate
+        # would fail exactly the repositories that are clean, with no output to say why. That is
+        # how this shipped: the local harness that exercised it did not set the same shell flags,
+        # so the no-match case passed there and failed on the first clean repository in CI.
+        { grep -hE 'has been deprecated|scheduled to be removed|warning: \[(deprecation|removal)\]|^w: .*is deprecated|^WARNING: (A (terminally deprecated|restricted) method|.*(will be (removed|blocked) in a future release|has been called by|--enable-native-access))' "$log" || true; } \
+          | { grep -v -- '--stacktrace' || true; } \
           | sed -E \
               -e 's# \(file:[^)]*\)##g' \
               -e 's#file:///[^ ]*/([A-Za-z0-9_.-]+\.kt)#\1#g' \
