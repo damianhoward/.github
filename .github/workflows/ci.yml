@@ -68,14 +68,14 @@ jobs:
         run: ./gradlew --no-daemon --warning-mode all clean build 2>&1 | tee /tmp/build.log
 
       - name: Check for new deprecations
-        uses: damianhoward/.github/.github/actions/deprecation-baseline@main
+        uses: damianhoward/.github/.github/actions/deprecation-baseline@gate-what-the-readme-hands-someone
         with:
           log: /tmp/build.log
 
       # After the build, because a repository whose code does not compile has a more useful
       # failure to report than a Compose file that did not come up.
       - name: Run what the README hands someone
-        uses: damianhoward/.github/.github/actions/readme-surface-checks@main
+        uses: damianhoward/.github/.github/actions/readme-surface-checks@gate-what-the-readme-hands-someone
 
       - name: Upload coverage to Codecov
         if: ${{ inputs.upload-coverage }}
