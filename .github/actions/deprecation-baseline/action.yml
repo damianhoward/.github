@@ -1,0 +1,89 @@
+name: Deprecation baseline
+description: Fails when the build emits a deprecation warning that is not already recorded in the repository's baseline.
+
+# The shared build ran with no warning mode, so Gradle summarised deprecations as a count and
+# nobody could see which repository owned one. `--warning-mode all` names them; this turns the
+# names into a gate.
+#
+# It fails on a NEW warning and never on a missing one, which is deliberate and is the only shape
+# that survives contact with the build cache. A `FROM-CACHE` compile task emits no warnings at
+# all, so "the baseline lists something the build did not print" is the normal state of an
+# incremental run, not evidence the warning was fixed. Failing on that would make the gate
+# unusable within a week — the same failure mode that had every coverage badge in the estate
+# rejecting a stale JaCoCo report. Baseline shrinkage stays a deliberate edit; the gate's job is
+# to stop a new warning arriving unnoticed.
+#
+# Lines are normalised before comparison. Absolute paths differ between a runner and a
+# workstation, line and column numbers move when a file above them is edited, and the Gradle
+# version inside a documentation URL changes on every wrapper bump. Baselining any of those would
+# mean a baseline that churns for reasons unrelated to deprecation, which is a baseline nobody
+# trusts.
+
+inputs:
+  log:
+    description: Build log to scan, produced by a build run with --warning-mode all.
+    required: true
+  baseline:
+    description: File of already-accepted deprecation lines, one per line. Absent means none are accepted.
+    required: false
+    default: .github/deprecations.baseline
+
+runs:
+  using: composite
+  steps:
+    - name: Compare deprecations against the baseline
+      shell: bash
+      run: |
+        log='${{ inputs.log }}'
+        baseline='${{ inputs.baseline }}'
+
+        if [ ! -f "$log" ]; then
+          echo "::error::no build log at $log — the build step must tee its output there"
+          exit 1
+        fi
+
+        # Four sources, because the warnings that predict a broken future build do not all come
+        # from the same place:
+        #
+        #  - Gradle's own deprecations, which --warning-mode all names individually;
+        #  - javac's -Xlint deprecation/removal categories;
+        #  - Kotlin's `w:` lines;
+        #  - and the JVM's runtime warnings, printed by the *test* JVM to stderr.
+        #
+        # The last is the one that is easy to miss and the reason this scans a teed log rather
+        # than a task output. Both warnings the estate actually carries are of that kind: POI
+        # calling a terminally deprecated sun.misc.Unsafe method, and RocksDB taking restricted
+        # native access. Neither is a compile-time deprecation, neither appears in Gradle's
+        # summary count, and both name a thing a future JDK removes or blocks outright.
+        #
+        # The trailing "Run with --stacktrace" continuation is Gradle telling you how to find the
+        # caller, not a distinct warning.
+        grep -hE 'has been deprecated|scheduled to be removed|warning: \[(deprecation|removal)\]|^w: .*is deprecated|^WARNING: (A (terminally deprecated|restricted) method|.*(will be (removed|blocked) in a future release|has been called by|--enable-native-access))' "$log" \
+          | grep -v -- '--stacktrace' \
+          | sed -E \
+              -e 's# \(file:[^)]*\)##g' \
+              -e 's#file:///[^ ]*/([A-Za-z0-9_.-]+\.kt)#\1#g' \
+              -e 's#(/[A-Za-z0-9_./-]*/)([A-Za-z0-9_.-]+\.(java|kt|gradle|kts))#\2#g' \
+              -e 's#:[0-9]+:[0-9]+#:L:C#g' \
+              -e 's#docs\.gradle\.org/[0-9]+(\.[0-9]+)*/#docs.gradle.org/VERSION/#g' \
+              -e 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+          | sort -u > /tmp/deprecations.current
+
+        if [ -f "$baseline" ]; then
+          sed -E '/^[[:space:]]*(#|$)/d' "$baseline" | sort -u > /tmp/deprecations.accepted
+        else
+          : > /tmp/deprecations.accepted
+        fi
+
+        comm -13 /tmp/deprecations.accepted /tmp/deprecations.current > /tmp/deprecations.new
+
+        if [ -s /tmp/deprecations.new ]; then
+          echo "::error::this build emits a deprecation warning that is not in $baseline"
+          echo "Fix it, or — if it comes from a dependency and cannot be fixed here — append it verbatim:"
+          echo
+          cat /tmp/deprecations.new
+          exit 1
+        fi
+
+        count=$(wc -l < /tmp/deprecations.current)
+        echo "no new deprecations ($count seen, all accepted)"

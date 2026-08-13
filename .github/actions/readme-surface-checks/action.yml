@@ -1,0 +1,65 @@
+name: README surface checks
+description: Executes the things a README hands someone — the Compose project, the npm lockfile, the HTML pages — rather than trusting that a green Gradle build covered them.
+
+# `clean build` is not the boundary it is read as. It compiles, tests and packages the
+# application, and stops there. Three defects reached `main` under a green one because nothing
+# executed them: a Compose file that could not start Postgres from a clean volume, a high advisory
+# sitting in two frontend lockfiles, and a page with no heading. All three are executable, and
+# executable is the only kind of check that stays true.
+#
+# Every check auto-detects its subject and is a no-op where that subject is absent, so a caller
+# stays a `uses:` one-liner. Pushing the variance down here rather than up into workflow inputs is
+# what keeps the shared CI byte-identical across the estate.
+
+runs:
+  using: composite
+  steps:
+    - name: Every page has exactly one h1
+      shell: bash
+      run: |
+        status=0
+        while IFS= read -r page; do
+          count=$(grep -c "<h1" "$page" || true)
+          if [ "$count" -ne 1 ]; then
+            echo "::error file=$page::expected exactly one <h1>, found $count"
+            status=1
+          fi
+        done < <(find . -name '*.html' \
+          -not -path '*/node_modules/*' -not -path '*/build/*' -not -path './.git/*')
+        exit $status
+
+    # Where a lockfile exists. The Gradle build never reads one, so an advisory against a
+    # frontend dependency is invisible to every other gate in the estate.
+    - name: Audit npm lockfiles
+      shell: bash
+      run: |
+        status=0
+        while IFS= read -r lock; do
+          dir=$(dirname "$lock")
+          echo "auditing $dir"
+          (cd "$dir" && npm audit --audit-level=high) || status=1
+        done < <(find . -name package-lock.json \
+          -not -path '*/node_modules/*' -not -path './.git/*')
+        exit $status
+
+    # From a clean volume, which is the state the README's reader is in and the one the
+    # stocks-analysis-us defect only appeared in. `--wait` blocks on the health checks, so this
+    # asserts the services became usable rather than that the containers started — a broker or a
+    # database accepts a connection well before it can answer.
+    - name: Bring up the Compose project and wait on it
+      shell: bash
+      run: |
+        file=$(ls docker-compose.yml docker-compose.yaml compose.yml compose.yaml 2>/dev/null | head -1 || true)
+        if [ -z "$file" ]; then
+          echo "no Compose file; nothing to bring up"
+          exit 0
+        fi
+        echo "bringing up $file"
+        trap 'docker compose -f "$file" down -v --remove-orphans' EXIT
+        if ! docker compose -f "$file" up -d --wait --wait-timeout 300; then
+          echo "::error file=$file::the Compose project did not become healthy"
+          docker compose -f "$file" ps
+          docker compose -f "$file" logs --tail 100
+          exit 1
+        fi
+        docker compose -f "$file" ps
