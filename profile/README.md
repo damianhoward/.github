@@ -26,8 +26,6 @@ The components are separately deployed and versioned. `trading-system` and `trad
 
 - **[portfolio-manager](https://github.com/damianhoward/portfolio-manager)** provides authenticated Kotlin clients for Binance and Bitfinex, with venue-specific HMAC signing and a safety-focused withdrawal workflow.
 - **[stocks-analysis-us](https://github.com/damianhoward/stocks-analysis-us)** is a Spring Boot pipeline that builds and ranks a US equity universe from public fundamentals and exports the results to Excel.
-- **[kafka-streams-patterns](https://github.com/damianhoward/kafka-streams-patterns)** demonstrates practical Kafka Streams aggregation, joining and state-management patterns.
-- **[sudoku-dancing-links](https://github.com/damianhoward/sudoku-dancing-links)** implements and compares Knuth's Algorithm X/Dancing Links and conventional backtracking.
 
 ## Engineering Approach
 
