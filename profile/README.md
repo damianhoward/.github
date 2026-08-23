@@ -7,9 +7,9 @@ An end-to-end trading platform covering live market data, price-time-priority ma
 The platform is composed of five independently built and tested systems:
 
 - **[market-data](https://github.com/damianhoward/market-data)** retrieves real market quotes and retains the last-good snapshot through transient provider failures.
-- **[orderbook](https://github.com/damianhoward/orderbook)** is a Kotlin limit order book and matching engine using scaled-integer prices and single-writer concurrency over an LMAX Disruptor ring buffer. Includes JMH throughput, latency and allocation benchmarks.
-- **[position-ledger](https://github.com/damianhoward/position-ledger)** consumes executions from Kafka, books positions in Oracle, reprices through the risk engine and publishes live position, VaR and PnL updates.
-- **[risk-engine](https://github.com/damianhoward/risk-engine)** implements Black-Scholes valuation and Greeks in Kotlin, independently cross-validated against OpenGamma Strata.
+- **[orderbook](https://github.com/damianhoward/orderbook)** is a limit order book and matching engine with price-time priority, using scaled-integer prices and single-writer concurrency over an LMAX Disruptor ring buffer. Includes JMH throughput, latency and allocation benchmarks.
+- **[position-ledger](https://github.com/damianhoward/position-ledger)** is the book of record: it consumes executions from Kafka and books each one into a fill ledger and its position in a single Oracle transaction, so a replayed execution cannot double-count and a crash cannot persist one without the other.
+- **[risk-engine](https://github.com/damianhoward/risk-engine)** values options and computes Greeks, VaR and expected shortfall, independently cross-validated against OpenGamma Strata.
 - **[trading-desk](https://github.com/damianhoward/trading-desk)** is a single web entry point over the live order book and the trading screen it renders from the ledger.
 
 The components are separately deployed and versioned. `position-ledger` and `trading-desk` compose the underlying services and libraries rather than duplicating their functionality.
@@ -24,8 +24,8 @@ The components are separately deployed and versioned. `position-ledger` and `tra
 
 ## Other Engineering Work
 
-- **[portfolio-manager](https://github.com/damianhoward/portfolio-manager)** provides authenticated Kotlin clients for Binance and Bitfinex, with venue-specific HMAC signing and a safety-focused withdrawal workflow.
-- **[stocks-analysis-us](https://github.com/damianhoward/stocks-analysis-us)** is a Spring Boot pipeline that builds and ranks a US equity universe from public fundamentals and exports the results to Excel.
+- **[portfolio-manager](https://github.com/damianhoward/portfolio-manager)** provides authenticated clients for Binance and Bitfinex, with venue-specific HMAC signing and a safety-focused withdrawal workflow.
+- **[stocks-analysis-us](https://github.com/damianhoward/stocks-analysis-us)** builds and ranks a US equity universe from public fundamentals and exports the results to Excel.
 
 ## Engineering Approach
 
