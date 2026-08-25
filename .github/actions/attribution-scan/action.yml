@@ -29,6 +29,28 @@ runs:
           exit 1
         fi
 
+    # The two scans above are loose on purpose. They read `--all`, so they must pass history
+    # that cannot be rewritten — the commits introducing this action are titled `Fail CI if
+    # Claude attribution appears in git history`, in eight public repositories. A pattern strict
+    # enough to reject a bare mention would fail every one of them permanently.
+    #
+    # This third scan is that strict pattern, aimed where it can be met: the commits a pull
+    # request adds. New work is held to the bar of no mention at all; history is held to the
+    # artifact bar it can actually clear. `CLAUDE.md` is excepted because commits legitimately
+    # name the file they change.
+    - name: Check new commit messages for any assistant reference
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set -euo pipefail
+        if git log "${BASE_SHA}..${HEAD_SHA}" --format="%B" | sed 's/claude\.md//gi' | grep -inE 'claude|anthropic'; then
+          echo "::error::A new commit message names the assistant or its vendor — reword it, see document 08."
+          exit 1
+        fi
+
     - name: Check for AI attribution in commit authorship
       shell: bash
       run: |
