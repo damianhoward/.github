@@ -18,7 +18,7 @@ The components are separately deployed and versioned. `position-ledger` and `tra
 
 - **Morgan Stanley**: trader-facing pricing, booking, P&L and risk systems for CDS Index Options and Structured Credit
 - **Goldman Sachs**: equities booking, high-volume trade processing and regulatory reporting across multiple engagements
-- **Citi**: cross-asset front-office risk and P&L infrastructure, including distributed calculation orchestration, reconciliation and intraday/EOD processing
+- **Citi**: front-office equities risk and P&L infrastructure, including distributed calculation orchestration, reconciliation and intraday/EOD processing
 - **CMC Markets**: low-latency options pricing and risk, FIX connectivity and off-heap market-data processing
 - **Blockchain.com / AiX**: institutional OTC trading, automated RFQ pricing and treasury infrastructure across spot, options, custody and lending
 - **Credit Suisse**: market risk and reference-data platforms, including large-scale in-memory risk aggregation
