@@ -1,0 +1,8 @@
+# actionlint validates runs-on against the GitHub-hosted labels it knows, and no release knows
+# ubuntu-26.04: 1.7.12 predates the image, and support is an open issue (rhysd/actionlint#682) on a
+# project with no release since. This list is actionlint's mechanism for labels it cannot know
+# about. It admits this one string and nothing else, so a mistyped label still fails. Remove the
+# entry once an actionlint release lists the label itself.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
