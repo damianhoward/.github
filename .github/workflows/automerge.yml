@@ -20,9 +20,6 @@ name: Auto-merge
 on:
   workflow_call:
     secrets:
-      APP_ID:
-        description: The organisation's auto-merge GitHub App.
-        required: true
       APP_PRIVATE_KEY:
         description: Its private key, exchanged below for a token that expires within the hour.
         required: true
@@ -48,8 +45,12 @@ jobs:
       - name: Mint a token for this run
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        #
+        # The app is named by its client ID, which the action prefers to the numeric app ID it
+        # used to take. A client ID is public — GET /apps/damianhoward-automerge returns it — so it
+        # is written here rather than held as a secret: only the private key authenticates.
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: Iv23liKETBZTId31TxdS
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Enable auto-merge
