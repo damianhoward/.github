@@ -29,7 +29,7 @@ on:
 
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # An allowlist rather than "any pull request": these repositories are public, and a green
     # build is not a review. Anyone could otherwise open a fork pull request that merges itself.
     # Drafts are excluded so work in progress does not land the moment its checks go green.

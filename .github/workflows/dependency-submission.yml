@@ -33,7 +33,7 @@ on:
 
 jobs:
   submit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       # Writing the snapshot is the whole point of the job, so it is scoped to this workflow
       # rather than widened in ci.yml. A pull request from a public fork cannot be granted

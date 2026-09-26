@@ -28,7 +28,7 @@ on:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Below the six-hour job ceiling, which GitHub reports as a cancelled run rather than a
     # failed one and therefore does not notify on. orderbook and risk-engine both hit it on
     # 2026-07-27 and reported nothing; a scan that has stopped running must say so.
