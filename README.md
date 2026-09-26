@@ -19,7 +19,7 @@ current, arriving as reviewable pull requests.
 | `.github/workflows/dep-review.yml`            | Dependency review; fails a PR on a high-severity advisory.                                                                                                             |
 | `.github/workflows/dependency-check.yml`      | Weekly OWASP dependency-check; fails on CVSS >= 7.0. Needs an `NVD_API_KEY` secret.                                                                                    |
 | `.github/workflows/dependency-submission.yml` | Submits the resolved Gradle dependency graph. `dep-review.yml` and Dependabot alerts see no JVM dependency without it.                                                 |
-| `.github/workflows/automerge.yml`             | Enables auto-merge so GitHub squash-merges once the required checks pass. Needs the `APP_ID` and `APP_PRIVATE_KEY` secrets.                                            |
+| `.github/workflows/automerge.yml`             | Enables auto-merge so GitHub squash-merges once the required checks pass. Needs the `APP_PRIVATE_KEY` secret; the app is named by its public client ID.                |
 | `.github/workflows/deploy.yml`                | Production deploy: re-runs the gate, ships the tested artifact, switches release atomically, gates on readiness, rolls back on the host. Needs the `DEPLOY_*` secrets. |
 | `.github/workflows/release.yml`               | Verifies a tagged commit, then publishes its release. Notes-only unless artifacts are named.                                                                           |
 
@@ -76,8 +76,9 @@ that auto-merged on 2026-07-14 under the previous `GITHUB_TOKEN` workflow:
 | kotlin-blockchain    | `d8a9fc43`   | none       | none          |
 | sudoku-dancing-links | `153e95ee`   | none       | none          |
 
-`automerge.yml` merges with a token minted per run from the organisation's app — `APP_ID` and
-`APP_PRIVATE_KEY`, held once at organisation level — so the push behaves like any other and no
+`automerge.yml` merges with a token minted per run from the organisation's app — named by its
+public client ID in the workflow, authenticated by `APP_PRIVATE_KEY` held once at organisation
+level — so the push behaves like any other and no
 long-lived credential sits in a repository. It cannot be `GITHUB_TOKEN` for the reason above. The
 fine-grained personal access token this replaced expired overnight on 2026-08-12 and blocked
 nothing visibly, because auto-merge fails as a workflow run that no required check depends on.
