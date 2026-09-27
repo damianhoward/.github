@@ -1,6 +1,6 @@
 name: Release
 
-# Reusable release for every damian1000 repository that publishes tagged versions. Callers are a
+# Reusable release for every damianhoward repository that publishes tagged versions. Callers are a
 # thin `uses:` triggered by their own tag push.
 #
 # It exists for two reasons. The estate had 22 tags and one published release: the libraries other
@@ -11,9 +11,13 @@ name: Release
 # grant anywhere here. Whoever can move a tag decides what runs against that token, so the pins
 # below are commit SHAs like everywhere else.
 #
-# `artifact-paths` is optional. Left empty the release is notes-only, which is what the
-# JitPack-built libraries need: JitPack builds the artifact from the tag itself, so attaching a
-# second copy would publish two things that could disagree.
+# `artifact-paths` is optional. Left empty the release is notes-only, which is what the libraries
+# need: their artifacts go to Maven Central, and a second copy attached here would be two things
+# that could disagree.
+#
+# A library publishes by naming its Central task in `build-command` and passing the four secrets
+# below. They are declared rather than inherited so that only a caller that hands them over can
+# publish, and the organisation secrets are scoped to the publishing repositories besides.
 on:
   workflow_call:
     inputs:
@@ -32,6 +36,15 @@ on:
           staged together and checksummed as SHA256SUMS.txt.
         type: string
         default: ""
+    secrets:
+      CENTRAL_USERNAME:
+        required: false
+      CENTRAL_PASSWORD:
+        required: false
+      SIGNING_KEY:
+        required: false
+      SIGNING_KEY_PASSWORD:
+        required: false
 
 jobs:
   release:
@@ -58,6 +71,11 @@ jobs:
       # Verify the tag before publishing it. A release names a commit as tested, and an
       # immutable version is the wrong place to discover that it was not.
       - name: Verify the tagged commit
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: ./gradlew --no-daemon ${{ inputs.build-command }}
 
       - name: Stage release artifacts
