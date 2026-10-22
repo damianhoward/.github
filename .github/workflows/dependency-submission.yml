@@ -67,7 +67,7 @@ jobs:
       # ship, and this graph should describe what does. Test configurations are excluded for the
       # same reason.
       - name: Generate and submit the dependency graph
-        uses: gradle/actions/dependency-submission@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           additional-arguments: ${{ inputs.additional-arguments }}
           dependency-resolution-task: ${{ inputs.dependency-resolution-task }}
