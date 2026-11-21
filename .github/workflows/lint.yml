@@ -45,6 +45,28 @@ jobs:
       - name: Lint workflow files
         run: actionlint -color
 
+      # Every workflow here installs the JDK separately, and a reusable workflow cannot share a
+      # variable with another file, so the Temurin version is written once per setup-java step.
+      # This is what keeps those copies one pin. It also refuses a bare feature version: "25"
+      # resolves to whatever the runner image has cached, which on 2026-11-21 was 25.0.5+8 while
+      # the boxes ran 25.0.5.1+2, and risk-engine's per-release runtime was linked from it without
+      # the CVE-2026-91403 blocked.certs fix. The value must match estate-infra's hosts/temurin;
+      # Adoptium writes 25.0.5.1+2 as 25.0.5+100000002, the patch level carried in the build number.
+      - name: One pinned Temurin version across every workflow
+        run: |
+          set -euo pipefail
+          versions="$(grep -rhoE 'java-version: *"[^"]*"' .github/workflows/ | sed -E 's/.*"([^"]*)"/\1/' | sort -u)"
+          count="$(printf '%s\n' "$versions" | grep -c . || true)"
+          if [ "$count" -ne 1 ]; then
+            echo "::error::setup-java versions disagree across the workflows:"
+            printf '  %s\n' "$versions"
+            exit 1
+          fi
+          case "$versions" in
+            *+*) echo "every setup-java step pins $versions" ;;
+            *) echo "::error::java-version \"$versions\" names no exact build; the runner's cache would decide it"; exit 1 ;;
+          esac
+
       - name: Set up Node # Prettier, matching the version the shared Spotless config pins
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
