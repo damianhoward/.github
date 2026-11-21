@@ -50,8 +50,9 @@ jobs:
       # This is what keeps those copies one pin. It also refuses a bare feature version: "25"
       # resolves to whatever the runner image has cached, which on 2026-11-21 was 25.0.5+8 while
       # the boxes ran 25.0.5.1+2, and risk-engine's per-release runtime was linked from it without
-      # the CVE-2026-91403 blocked.certs fix. The value must match estate-infra's hosts/temurin;
-      # Adoptium writes 25.0.5.1+2 as 25.0.5+100000002, the patch level carried in the build number.
+      # the CVE-2026-91403 blocked.certs fix. The value must match estate-infra's hosts/temurin.
+      # setup-java spells a four-part release with the patch level ahead of the build number in the
+      # metadata, so 25.0.5.1+2 is 25.0.5+1.2; Adoptium's own semver, 25.0.5+100000002, matches nothing.
       - name: One pinned Temurin version across every workflow
         run: |
           set -euo pipefail
