@@ -4,3 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # One pull request a week instead of one per action. Every repository calls these workflows at
+    # @main, so a merge here is live across the estate at once and is reviewed by hand rather than
+    # auto-merged. Five separate bumps sat unmerged for a month; one grouped bump is one decision,
+    # and the halves of a pair such as codeql-action's init and analyze cannot land apart.
+    groups:
+      actions:
+        patterns:
+          - "*"
