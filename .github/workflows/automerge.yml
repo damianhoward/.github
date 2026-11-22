@@ -30,10 +30,19 @@ jobs:
     # An allowlist rather than "any pull request": these repositories are public, and a green
     # build is not a review. Anyone could otherwise open a fork pull request that merges itself.
     # Drafts are excluded so work in progress does not land the moment its checks go green.
+    #
+    # The estate's own app is admitted for one kind of pull request: adopting a build-conventions
+    # release, which that repository's release workflow opens in every consumer once the version is
+    # served. The release is the reviewed act and each consumer's CI gates its own adoption, as a
+    # Dependabot bump is gated. The branch name narrows it because the same app opens the weekly
+    # Temurin pull requests, which are meant to wait for a person, and authoring as the app needs
+    # its private key, an organisation secret a fork cannot read.
     if: >-
       !github.event.pull_request.draft &&
       (github.event.pull_request.user.login == 'damian1000' ||
-       github.event.pull_request.user.login == 'dependabot[bot]')
+       github.event.pull_request.user.login == 'dependabot[bot]' ||
+       (github.event.pull_request.user.login == 'damianhoward-automerge[bot]' &&
+        startsWith(github.event.pull_request.head.ref, 'adopt-build-conventions-')))
     steps:
       # A token minted here lives about an hour, so there is no long-lived credential in any
       # repository and nothing to rotate on a calendar. The personal access token this replaces
