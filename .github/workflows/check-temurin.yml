@@ -1,0 +1,133 @@
+name: Check Temurin
+
+# Opens pull requests when Adoptium publishes a newer Temurin 25 build than the shared workflows pin.
+#
+# The pin is what every service's runtime is linked from, so it is the version production runs. This
+# proposes and never applies, in two places at once: the pin here, and runtime-jdk-floor in
+# build-conventions, which is what makes every service relink. A person merges this repository's
+# pull request first, then build-conventions', and tags a build-conventions release; the release
+# opens an adoption pull request in every consumer, and each redeploys on the new runtime as it
+# merges. A new runtime reaches production through a person, not because a vendor shipped.
+#
+# Weekly. Temurin publishes a security update every quarter and an occasional point release between,
+# so a week's latency costs little.
+#
+# A failed run is the notification. The script exits 3 when Adoptium's latest is older than the pin,
+# which is a pulled release somebody should read about rather than a pull request anybody should
+# merge.
+on:
+  schedule:
+    - cron: "41 7 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: check-temurin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare the pin with Adoptium
+        id: compare
+        run: |
+          set -euo pipefail
+          rc=0
+          out="$(bash scripts/check-temurin.sh)" || rc=$?
+          printf '%s\n' "$out"
+          case "$rc" in
+            0) echo "changed=false" >> "$GITHUB_OUTPUT" ;;
+            10)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "release=$(tail -1 <<<"$out")" >> "$GITHUB_OUTPUT"
+              ;;
+            *) exit "$rc" ;;
+          esac
+
+      # The app rather than GITHUB_TOKEN: a pull request opened with GITHUB_TOKEN starts no
+      # workflows, so its required checks would never report, and GITHUB_TOKEN cannot reach
+      # build-conventions at all. Neither pull request is on an adopt-build-conventions- branch,
+      # so the shared auto-merge leaves both for a person.
+      - name: Mint a token for the pull requests
+        if: steps.compare.outputs.changed == 'true'
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: Iv23liKETBZTId31TxdS
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: damianhoward
+          repositories: .github,build-conventions
+
+      - name: Open the pull request for the shared workflows
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          RELEASE: ${{ steps.compare.outputs.release }}
+        run: |
+          set -euo pipefail
+          branch="temurin-${RELEASE//+/-}"
+          if gh pr list --head "$branch" --state open --json number --jq '.[0].number' | grep -q .; then
+            echo "a pull request for $RELEASE is already open"
+            exit 0
+          fi
+          git config user.name "damianhoward-automerge[bot]"
+          git config user.email "damianhoward-automerge[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -q -am "Pin the shared workflows to Temurin $RELEASE"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          gh pr create --head "$branch" --title "Pin the shared workflows to Temurin $RELEASE" --body-file - <<EOF
+          ## What
+
+          Every setup-java step installs Temurin $RELEASE.
+
+          ## Before merging
+
+          - Read Adoptium's release notes for $RELEASE.
+
+          ## After merging
+
+          1. Merge build-conventions' matching pull request, which raises \`runtime-jdk-floor\` to $RELEASE. Its build links on this pin, so it goes green only once this is merged.
+          2. Tag a build-conventions release. It opens an adoption pull request in every consumer, and each service relinks its runtime on $RELEASE as it merges.
+          3. Run \`bin/check-runtimes.sh box1\` and \`box2\` in estate-infra to see every service on $RELEASE.
+          EOF
+
+      - name: Open the matching pull request for build-conventions
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          RELEASE: ${{ steps.compare.outputs.release }}
+        run: |
+          set -euo pipefail
+          branch="temurin-${RELEASE//+/-}"
+          if gh pr list --repo damianhoward/build-conventions --head "$branch" --state open --json number --jq '.[0].number' | grep -q .; then
+            echo "a build-conventions pull request for $RELEASE is already open"
+            exit 0
+          fi
+          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/damianhoward/build-conventions.git" "$RUNNER_TEMP/conventions"
+          cd "$RUNNER_TEMP/conventions"
+          sed -i -E "s/^runtime-jdk-floor = \"[^\"]*\"/runtime-jdk-floor = \"$RELEASE\"/" gradle/libs.versions.toml
+          git diff --quiet && { echo "::error::runtime-jdk-floor was not found to raise"; exit 1; }
+          git config user.name "damianhoward-automerge[bot]"
+          git config user.email "damianhoward-automerge[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -q -am "Raise the runtime floor to Temurin $RELEASE"
+          git push -q origin "$branch"
+          gh pr create --repo damianhoward/build-conventions --head "$branch" --title "Raise the runtime floor to Temurin $RELEASE" --body-file - <<EOF
+          ## What
+
+          \`runtime-jdk-floor\` is now $RELEASE, so no image can be linked from an older Temurin build.
+
+          ## Why
+
+          The shared workflows are moving to Temurin $RELEASE. Releasing this is what relinks every service's runtime: the release opens an adoption pull request in each consumer, and each redeploys on $RELEASE as it merges.
+
+          ## Testing
+
+          The build links its test images on the shared workflows' pin, so it passes once damianhoward/.github's matching pull request is merged. Re-run it then.
+          EOF
