@@ -25,8 +25,12 @@ current, arriving as reviewable pull requests.
 
 ## This repository's own gate
 
-`lint.yml` is the only workflow here that is not reusable — everything else in the table is
-`on: workflow_call`.
+`lint.yml` and `check-temurin.yml` are the only workflows here that are not reusable — everything
+else in the table is `on: workflow_call`. `lint.yml` holds every `setup-java` step to one exact
+Temurin build, which is the build every service's runtime is linked from. `check-temurin.yml` runs
+weekly and, when Adoptium publishes a newer Temurin 25, opens two pull requests that wait for a
+person: the pin here, and the matching `runtime-jdk-floor` raise in build-conventions, whose release
+relinks every service.
 
 This repository carries no auto-merge caller, and that is the one place the estate's uniformity
 is deliberately broken. Every other repository's changes reach that repository; these reach all of
